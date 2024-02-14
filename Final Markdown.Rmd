@@ -1,0 +1,919 @@
+---
+title: "Ensembling Methodologies to Predict Medical Expenses Among Smokers and Non-Smokers"
+author: "Joel Laskow, Oluwadamilola Owolabi, and Simi Augustine"
+date: "2024-02-02"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Summary:
+
+The following is a document outlining our analysis of insurance data provided by "Machine Learning in R (2013)", by Brett Lantz. This document will guide readers through our analysis and the models constructed to predict patient medical expenses per year. Methodlogies included advanced multiple linear regresion, random forest, KNN regression, and ensembling by avaeraging. Final predictions with ensembled models were cross validated by Leave One Out Cross Validation (LOOCV) and K-Fold Cross Validation.
+
+```{r}
+
+library(ggplot2)
+library(naniar)
+library(FNN)
+library(randomForest)
+library(class)
+library(caret)
+library(tidyverse)
+library(lattice)
+library(dplyr)
+library(leaps)
+library(glmnet)
+library(caTools)
+library(fastDummies)
+library(base)
+
+
+```
+
+# Data Pre Processing:
+
+Our dataset conatins 1338 subjects with 7 variables each. There are 4 continuous variables: Age, body mass index (bmi), number of children (children), and yearly medical expenses (charges). The dataset contains 3 categorical variables: gender (sex), smoker status (smoker), and geographical region (region). All patients are located within the United States of America.
+
+```{r}
+
+
+insurance <- read.csv("C:/Users/owola/Documents/MY_COURSES/SPRING_2024/DS_6372/Project/Project 1/insurance.csv")
+
+
+summary(insurance)
+
+```
+
+Our dataset can be obtained from the following sources:
+
+-   <https://www.packtpub.com/>
+
+or
+
+-   <https://www.kaggle.com/datasets/teertha/ushealthinsurancedataset>
+
+```{r}
+
+vis_miss(insurance)
+
+
+```
+
+A preliminary assessment of our dataset reveals there are no missing values. This fortunately expedites pre-processing, allowing us to move directly to the data analysis phase.
+
+# Exploratory Data Analysis:
+
+Author: Simi Augustine
+
+```{r}
+
+hist(insurance$age, main="Histogram of Age", xlab="Age")
+
+ggplot(insurance, aes(x=age, y=charges)) + geom_point() +
+   labs(title="Charges vs Age", x="Age", y="Charges") + geom_smooth(method="lm") + theme_minimal()
+ 
+# Create a scatter plot for age vs. insurance charges, color-coded by smoker status
+# and faceted by region
+ggplot(insurance, aes(x = age, y = charges, color = smoker)) + 
+  geom_point(alpha = 0.5) + # Adding transparency to see overlapping points
+  facet_wrap(~region, scales = "free_y") + # Creating a separate plot for each region
+  scale_color_manual(values = c("yes" = "red", "no" = "blue")) + # Manually assigning colors
+  theme_minimal() +
+  labs(title = "Insurance Charges by Age and Smoker Status, Faceted by Region",
+       x = "Age",
+       y = "Insurance Charges",
+       color = "Smoker Status") +
+  theme(legend.position = "bottom") # Adjust legend position
+
+# and faceted by sex
+ggplot(insurance, aes(x = age, y = charges, color = sex)) + 
+  geom_point(alpha = 0.5) + # Adding transparency to see overlapping points
+  facet_wrap(~region, scales = "free_y") + # Creating a separate plot for each region
+  scale_color_manual(values = c("female" = "red", "male" = "blue")) + # Manually assigning colors
+  theme_minimal() +
+  labs(title = "Insurance Charges by Age and Sex, Faceted by Region",
+       x = "Age",
+       y = "Insurance Charges",
+       color = "Sex") +
+  theme(legend.position = "bottom") # Adjust legend position
+```
+
+# Histogram for BMI
+
+Plot the relationship between Charges and BMI
+
+```{r}
+
+ggplot(insurance, aes(x = bmi)) + 
+  geom_histogram(bins = 30, fill = "blue", color = "black") + 
+  labs(title = "Histogram of BMI", x = "BMI")
+
+ggplot(insurance, aes(x=bmi, y=charges)) + geom_point() + geom_smooth(method="lm") + theme_minimal()
+hist(insurance$bmi, main="Histogram of BMI", xlab="BMI")
+
+```
+
+# BMI, Charges, Smoker
+
+Plot the relationship between Charges and BMI by Smoker status
+
+```{r}
+ggplot(insurance, aes(x=bmi, y=charges, color=smoker)) + 
+  geom_point() + 
+  labs(title="Charges vs BMI by Smoker Status", x="BMI", y="Charges") + 
+  scale_color_manual(values=c("yes"="red", "no"="green")) + 
+  theme_minimal()
+
+```
+
+# For categorical variables, use boxplots to visualize the relationship
+
+Smoker, Region, Children
+
+```{r}
+
+# insurance charges - sex
+ggplot(insurance, aes(x = sex, y = charges, fill = sex)) + 
+  geom_boxplot() +
+  theme_minimal() + 
+  labs(title = "Insurance charges for Males vs Females", x = "Sex", y = "Insurance Charges") +
+  scale_fill_brewer(palette = "Pastel1") # Optional: Use a color palette
+
+
+# Smoking behaviour related to insurance charges
+ggplot(insurance, aes(x = smoker, y = charges, fill = smoker)) + 
+  geom_boxplot() +
+  theme_minimal() + 
+  labs(title = "Smoking behaviour related to insurance charges", x = "Smoker", y = "Insurance Charges") +
+  scale_fill_brewer(palette = "Pastel1") # Optional: Use a color palette
+
+# People distributed by region
+ggplot(insurance, aes(x = region)) + 
+  geom_bar(fill = "skyblue", color = "black") +
+  geom_text(stat = 'count', aes(label = ..count..), vjust = -0.5) +
+  theme_minimal() +
+  labs(title = "Number of People by Region", x = "Region", y = "Count") +
+  scale_x_discrete(limits = c("northeast", "northwest", "southeast", "southwest"))
+
+#Insurance charges related to region
+ggplot(insurance, aes(x = region, y = charges, fill = region)) + 
+  geom_boxplot() +
+  theme_minimal() + 
+  labs(title = "Insurance charges related to region", x = "region", y = "Insurance Charges") +
+  scale_fill_brewer(palette = "Pastel1") # Optional: Use a color palette
+```
+
+# Children
+
+```{r}
+
+insurance$children <- as.factor(insurance$children)
+#Insurance charges related to number of children
+ggplot(insurance, aes(x = children, y = charges, fill = children)) + 
+  geom_boxplot() +
+  theme_minimal() + 
+  labs(title = "Insurance charges related to number of children", x = "children", y = "Insurance Charges") +
+  scale_fill_brewer(palette = "Pastel1") # Optional: Use a color palette
+
+# Filter for individuals with no children
+insurance_no_children <- insurance[insurance$children == 0, ]
+
+# Create a scatter plot, color-coded by age and sized by BMI
+ggplot(insurance_no_children, aes(x = age, y = charges, color = age, size = bmi, shape = smoker)) + 
+  geom_point() +
+  scale_color_gradient(low = "blue", high = "red") + # Color gradient from blue (younger) to red (older)
+  scale_size(range = c(1, 6), name = "BMI") + # Adjust the size scale for BMI
+  scale_shape_manual(values = c(16, 17), name = "Smoker Status", labels = c("Non-Smoker", "Smoker")) + # Define shapes for smoker status
+  labs(title = "Insurance Charges by Age for Individuals with No Children",
+       x = "Age",
+       y = "Insurance Charges",
+       color = "Age",
+       size = "BMI",
+       shape = "Smoker Status") +
+  theme_minimal() +
+  theme(legend.position = "right")
+```
+
+```{r}
+
+# Count the number of children per family
+table(insurance$children)
+```
+
+# Objective 1:
+
+Author: Oluwadamilola Owolabi
+
+## Model 1:
+
+## Basic linear regression model
+
+```{r}
+
+# Getting the csv file
+
+insuranceData <-read.csv("C:/Users/owola/Documents/MY_COURSES/SPRING_2024/DS_6372/Project/Project 1/insurance.csv")
+head(insuranceData)
+
+insurance <- insuranceData
+
+```
+
+Data Sorting
+
+```{r}
+
+#Creating a function for adding new columns
+create_variable <- function(dataset, Search_variable, new_column_name) {
+ # Create a new column with default value 0
+  dataset[[new_column_name]] <- 0
+  
+  # Iterate through each row
+  for (i in 1:nrow(dataset)) {
+    # Check if the variable is present in the row
+    if (Search_variable %in% dataset[i, ]) {
+      dataset[i, new_column_name] <- 1
+    }
+  }
+  
+  return(dataset)
+}
+
+#adding more variables to the dataset #i forgot to account for sex
+insurance2 <- insurance
+insurance2 <- create_variable(insurance2, "yes", "is_smoker") #Adding column to account for presence of smokers
+insurance2 <- create_variable(insurance2, "no", "not_smoker") #Adding column to account for absence of smokers
+insurance2 <- create_variable(insurance2, "southwest", "southwest") #Adding column to account for presence of the southwest region
+insurance2 <- create_variable(insurance2, "southeast", "southeast") #Adding column to account for presence of the southeast region
+insurance2 <- create_variable(insurance2, "northwest", "northwest") #Adding column to account for presence of the northwest region
+insurance2 <- create_variable(insurance2, "northeast", "northeast") #Adding column to account for presence of the northeast region
+insurance2 <- create_variable(insurance2, "male", "male") #Adding column to account for presence of the male region
+insurance2 <- create_variable(insurance2, "female", "female") #Adding column to account for presence of the female region
+head(insurance2)
+
+#insurance2 to be used later during MLR an CV ti increase model complexity
+
+#splitting the train and the test dataset
+set.seed(1234)
+index <- createDataPartition(insurance2$charges, p = 0.8, list = FALSE)
+insurance2 <- insurance2[index, ]
+test_insurance <- insurance2[-index, ]
+
+head(insurance)
+
+
+```
+
+```{r}
+
+fwd.train=regsubsets(charges ~ .,data=insurance2,method="forward",nvmax=20)
+
+model_basic = lm(charges ~ .,data=insurance2)
+
+#Creating a prediction function 
+predict.regsubsets =function (object , newdata ,id ,...){
+  form=as.formula (object$call [[2]])
+  mat=model.matrix(form ,newdata )
+  coefi=coef(object ,id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
+}
+
+valMSE<-c()
+#note my index, i, is to 20 since that is how many predictors I went up to during fwd selection
+for (i in 1:3){
+  predictions<-predict.regsubsets(object=fwd.train,newdata=test_insurance,id=i) 
+  valMSE[i]<-mean((test_insurance$charges-predictions)^2)
+}
+
+par(mfrow=c(1, 1))
+plot(1:3,sqrt(valMSE),type="l",xlab="# of predictors",ylab="test vs train RMSE") #ylim=c(11400,11900))
+index<-which(valMSE==min(valMSE))
+points(index,sqrt(valMSE[index]),col="red",pch=10)
+
+trainMSE<-summary(fwd.train)$rss/nrow(test_insurance)
+lines(1:8,sqrt(trainMSE),lty=3,col="blue")
+
+coef(fwd.train, 3) #Formulae to calculate the validation MSE
+summary(fwd.train)
+summary(model_basic)
+confint(model_basic)
+
+
+
+
+
+#10-fold CV
+fitControl<-trainControl(method="repeatedcv",number=10,repeats=10) 
+glmnet.fit<-train(charges ~ (age)^2 + (bmi)^2 + (children)^2 + (is_smoker)^2,
+               data=insurance2,
+               method="glmnet",
+               trControl=fitControl
+               )
+glmnet.fit
+plot(glmnet.fit)
+```
+
+## Complex linear regression model
+
+```{r, warning=FALSE}
+
+model.fwd=regsubsets(charges ~ (age)^2 + (bmi)^2 + (children)^2 + (is_smoker)^2+ (southwest)^2 + (southeast)^2 + (northwest^2) + (northeast)^2 + (male)^2 + (female)^2,data=insurance2,method="forward",nvmax=20)
+
+summary(model.fwd)$adjr2
+summary(model.fwd)$rss
+summary(model.fwd)$bic
+
+par(mfrow=c(1,3))
+bics<-summary(model.fwd)$bic
+plot(1:8,bics,type="l",ylab="BIC",xlab="# of predictors") #got 7 from the forward selection prediction
+index<-which(bics==min(bics))
+points(index,bics[index],col="red",pch=10)
+
+adjr2<-summary(model.fwd)$adjr2
+plot(1:8,adjr2,type="l",ylab="Adjusted R-squared",xlab="# of predictors")
+index<-which(adjr2==max(adjr2))
+points(index,adjr2[index],col="red",pch=10)
+
+rss<-summary(model.fwd)$rss
+plot(1:8,rss,type="l",ylab="train RSS",xlab="# of predictors")
+index<-which(rss==min(rss))
+points(index,rss[index],col="red",pch=10)
+
+coef(model.fwd,8) #looking at coefficints
+
+#analysis: out of the 6 coefficients gotten by the forward selction, the BIC chose 4
+```
+
+# Validation testing for complex model
+
+```{r}
+
+set.seed(1234)
+trainIndex<-createDataPartition(insurance2$charges,p=.8,list=FALSE)  #p: proportion of data in train
+
+training<-insurance2[trainIndex,]
+validate<-insurance2[-trainIndex,]
+
+training <- insurance2
+validate <- test_insurance
+
+fwd.train=regsubsets(charges ~ (age)^2 + (bmi)^2 + (children)^2 + (is_smoker)^2 + (southwest)^2 + (southeast)^2 + (northwest^2) + (northeast)^2 + (male)^2 + (female)^2,data=training,method="forward",nvmax=20)
+
+model = lm(charges ~ (age)^2 + (bmi)^2 + (children)^2 + (is_smoker)^2 ,data=training)
+
+#Creating a prediction function
+predict.regsubsets =function (object , newdata ,id ,...){
+  form=as.formula (object$call [[2]])
+  mat=model.matrix(form ,newdata )
+  coefi=coef(object ,id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
+}
+
+valMSE<-c()
+#note my index, i, is to 20 since that is how many predictors I went up to during fwd selection
+for (i in 1:8){
+  predictions<-predict.regsubsets(object=fwd.train,newdata=validate,id=i)
+  valMSE[i]<-mean((validate$charges-predictions)^2)
+}
+
+par(mfrow=c(1, 1))
+plot(1:8,sqrt(valMSE),type="l",xlab="# of predictors",ylab="test vs train RMSE") #ylim=c(11400,11900))
+index<-min(which(valMSE==min(valMSE)))
+points(index,sqrt(valMSE[index]),col="red",pch=10)
+
+trainMSE<-summary(fwd.train)$rss/nrow(training)
+lines(1:8,sqrt(trainMSE),lty=3,col="blue")
+
+coef(fwd.train, 4) #Formulae to calculate the validation MSE
+summary(fwd.train)
+summary(model)
+confint(model)
+
+```
+
+Getting the 10 fold CV
+
+```{r}
+
+
+#set.seed(1234)
+
+fitControl<-trainControl(method="repeatedcv",number=10,repeats=10)
+glmnet.fit<-train(charges ~ (age)^2 + (bmi)^2 + (children)^2 + (is_smoker)^2 + (southwest)^2 + (southeast)^2 + (northwest^2) + (northeast)^2 + (male)^2 + (female)^2,
+               data=insurance2,
+               method="glmnet",
+               trControl=fitControl
+               )
+glmnet.fit
+plot(glmnet.fit)
+
+
+```
+
+# Objective 2:
+
+Author: Joel Laskow
+
+#### Setting aside a portion of our dataset
+
+Our end goal is to build an ensemble incorporating our KNN model, a random forest model, and a complex multiple linear regression model. We will test the final reliability of the ensemble using a portion of our insurance data. Let's set aside 20% of our insurance.csv data
+
+```{r}
+
+set.seed(1234)
+
+index <- createDataPartition(insurance$charges, p = 0.8, list = FALSE)
+ins.partitioned <- insurance[index, ]
+final_validation_data <- insurance[-index, ]
+```
+
+Random Forest is a aggregation method that can be used for classification and regression. The model is often used to make predictions without overfitting a model. This process works though bagging:
+
+-   Bagging: The creation of multiple training subsets (called bootstrap samples) from a training dataset, then aggregating the results to make a final prediction.
+
+## Model 3: Random Forest
+
+We can start our analysis with the construction of a random forest model. Due to computation and time constraints, we only ran 5000 iterations with 2 variables per iteration.
+
+```{r}
+
+set.seed(1234)
+
+ins.partitioned2<-ins.partitioned
+
+# Running Random Forest
+
+rf.fit<-randomForest(charges~., data=ins.partitioned2, ntree=5000,
+                     keep.forest=FALSE, mtry=2, type="regression", importance=TRUE)
+rf.fit
+```
+
+We see our RF model accounts for 85.71% of the variance within the training dataset, with an MSE of 22330568, equivalent to an RMSE of approximately 4725.5230.
+
+## Contribution Plots from Random Forest
+
+Using the results of the RF model, we can construct a contribution plot to quickly visualize which variables contributed most to the model's predictions. This might offer some insight into optimal variables for future models.
+
+```{r}
+
+importance_data <- as.data.frame(importance(rf.fit))
+
+plot_data <- data.frame(
+  Variable = row.names(importance_data),
+  Importance = importance_data$IncNodePurity
+)
+
+plot_data <- plot_data[order(plot_data$Importance, decreasing = TRUE), ]
+
+# Make a contribution plot
+library(ggplot2)
+
+ggplot(plot_data, aes(x = Variable, y = Importance)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.7) +
+  labs(title = "Contribution Plot - Random Forest",
+       x = "Variable",
+       y = "Importance") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+Based on the contribution plot, there is evidence that the 3 most influential variables within the dataset are Age, bmi, and smoker status.
+
+# Model 4: Full and Reduced KNN Models
+
+Insights from the previously discussed contribution plots suggest that age, bmi, and smoker status are the 3 most influential variables within the dataset. Perhaps we can apply these findings to optimizing a KNN Regression Model. We will move forward compaing a full KNN model and a reduced KNN model using age, bmi, and smoker status.
+
+## Full-Model KNN (Full-KNN)
+
+```{r, , message=FALSE, warning=FALSE}
+
+# Build dummy variables
+
+insurancedummies <- ins.partitioned %>%
+  dummy_cols(select_columns = c("sex", "smoker", "region"), remove_selected_columns=TRUE)
+
+
+# Splitting the dataset 75:25
+
+set.seed(1234)
+
+split<-sample.split(insurancedummies, SplitRatio=0.75)
+
+training_set<-subset(insurancedummies, split==TRUE)
+
+test_set<-subset(insurancedummies, split==FALSE)
+
+
+# Feature Scaling in training
+
+numeric_columns<-c("age", "bmi", "children", "charges")
+
+train_numeric_data<-training_set[, numeric_columns]
+
+mean_train<-colMeans(train_numeric_data, na.rm=TRUE)
+
+sd_train<-apply(train_numeric_data, 2, sd, na.rm=TRUE)
+
+## Scale the training set
+
+scaled_train_numeric_data<-scale(train_numeric_data, center=mean_train, scale=sd_train)
+
+# Feature Scaling in test
+
+test_numeric_data<-test_set[, numeric_columns]
+
+mean_test<-colMeans(test_numeric_data, na.rm=TRUE)
+
+sd_test<-apply(test_numeric_data, 2, sd, na.rm=TRUE)
+
+## Scale the test set
+
+scaled_test_numeric_data<-scale(test_numeric_data, center=mean_test, scale=sd_test)
+
+
+# Merging our scaled columns with our dummy variables
+
+scaled_train_data<-cbind(scaled_train_numeric_data, training_set[,-c(1,2,3,4)])
+
+scaled_test_data<-cbind(scaled_test_numeric_data, test_set[,-c(1,2,3,4)])
+
+train_target <- training_set$charges
+
+
+set.seed(1234)
+
+num_loops <- 10  # Adjust the number of loops based on your preference
+k_values <- seq(1, 100, by = 1)
+ 
+# Initialize vectors to store results
+average_mse_values <- numeric(length(k_values))
+
+for (loop in 1:num_loops) {
+  best_k <- NULL
+  best_mse <- Inf
+  mse_values <- numeric(length(k_values))
+
+  for (k in k_values) {
+    knn_model <- knn.reg(train = scaled_train_data, test = scaled_test_data, y = train_target, k = k)
+    
+    predicted_values <- knn_model$pred
+    
+    unscaled_predicted_values <- predicted_values * sd_test + mean_test
+    
+    mse <- mean((test_set$charges - unscaled_predicted_values)^2)
+    
+    mse_values[k] <- mse
+    
+    if (mse < best_mse) {
+      best_k <- k
+      best_mse <- mse
+    }
+  }
+
+  # Update the average_mse_values
+  average_mse_values <- average_mse_values + mse_values
+}
+
+# Calculate the average MSE
+average_mse_values <- average_mse_values / num_loops
+
+# Create a data frame for plotting
+plot_data <- data.frame(k = k_values, mse = average_mse_values)
+
+# Plot the average MSE values for different k
+ggplot(plot_data, aes(x = k, y = mse)) +
+  geom_line() +
+  geom_point(aes(x = best_k, y = best_mse), color = "red", size = 3) +
+  labs(title = "Average MSE vs. k in Full KNN Regression",
+       x = "Number of Neighbors (k)",
+       y = "Average Mean Squared Error (MSE)") +
+  theme_minimal()
+
+print("Best MSE:")
+print(best_mse)
+print("RMSE:")
+print(best_mse^0.5)
+
+```
+
+Our Full KNN Model reaches its lowest RMSE at k=5, where we achieve an MSE of 233930388 (RMSE = 15294.78).
+
+## Reduced KNN Model (Red-KNN)
+
+We can now find optimal k and RMSE for a reduced model.
+
+```{r, warning=FALSE}
+
+# We'll select for the 3 factors deemed "most important" by Random Forest and construct new test and training sets
+
+red_scaled_train_data<-scaled_train_data%>%select(c("bmi","smoker_yes", "charges"))
+
+
+red_scaled_test_data<-scaled_test_data%>%select(c("bmi","smoker_yes", "charges"))
+
+
+set.seed(1234)
+
+num_loops <- 10  # Adjust the number of loops based on your preference
+k_values <- seq(1, 100, by = 1)
+
+# Initialize vector to accumulate MSE values across loops
+average_mse_values <- rep(0, length(k_values))
+
+for (loop in 1:num_loops) {
+  best_k <- NULL
+  best_mse <- Inf
+  mse_values <- numeric(length(k_values))
+
+  for (k in k_values) {
+    knn_model <- knn.reg(train = red_scaled_train_data, test = red_scaled_test_data, y = train_target, k = k)
+    
+    predicted_values <- knn_model$pred
+    
+    unscaled_predicted_values <- predicted_values * sd_test + mean_test
+    
+    mse <- mean((test_set$charges - unscaled_predicted_values)^2)
+    
+    mse_values[k] <- mse
+    
+    if (mse < best_mse) {
+      best_k <- k
+      best_mse <- mse
+    }
+  }
+
+  # Accumulate the MSE values across loops
+  average_mse_values <- average_mse_values + mse_values
+}
+
+# Calculate the average MSE by dividing the accumulated MSE values by the number of loops
+average_mse_values <- average_mse_values / num_loops
+
+# Create a data frame for plotting
+plot_data <- data.frame(k = k_values, mse = average_mse_values)
+
+# Plot the average MSE values for different k
+ggplot(plot_data, aes(x = k, y = mse)) +
+  geom_line() +
+  geom_point(aes(x = best_k, y = best_mse), color = "red", size = 3) +
+  labs(title = "Average MSE vs. k in Reduced KNN Regression",
+       x = "Number of Neighbors (k)",
+       y = "Average Mean Squared Error (MSE)") +
+  theme_minimal()
+
+
+print(best_k)
+print("Best MSE:")
+print(best_mse)
+print("RMSE:")
+print(best_mse^0.5)
+
+```
+
+Our Reduced KNN Model reaches its lowest RMSE at k=4, where we achieve an MSE of 232290984 (RMSE = 15241.1).
+
+To summarize our findings from this section, we established 2 KNN models to predict hospital charges among our patients. One model incorporated all variables within our dataset (full model), while a second incorporated only those selected with high importance from our random forest model (reduced model). We identified optimal k values for each model (k=5 and k=4, respectively) and compared the MSE. Full Model MSE was 233930388 (RMSE = 15294.78), and the reduced model MSE was 232290984 (RMSE = 15241.1). Given the similarity in RMSE after optimization, we concluded that the reduced model provides greater model simplicity without sacrificing predictive power; for this reason, we moved forward strictly with the reduced model.
+
+It should also be emphasized that MSE and RMSE must be interpreted within the context of our dataset. While the values seem large, we are predicting charges ranging from tens to hundreds of thousands of dollars. Given the magnitude of the values in our dependent variable, it is expected to obtain an RMSE in the thousands.
+
+# Ensembling
+
+We've obtained some promising results from our RF and Reduced KNN Regression models, as well as our regression models. Now let's use them both to make predictions on our final_validation_data.
+
+## Random Forest Validation Predictions
+
+We start by building predictions from our Random Forest Model.
+
+```{r}
+
+set.seed(1234)
+
+ins.partitioned2<-ins.partitioned 
+
+rf.final_validation_data<-final_validation_data
+
+
+train_data <- cbind(ins.partitioned2[, -which(names(ins.partitioned2) == "charges")], target_column = ins.partitioned2$charges)
+
+ctrl <- trainControl(method = "cv", number = 10)
+
+rf_model <- train(target_column ~ ., data = train_data, method = "rf", trControl = ctrl)
+
+# Make predictions on new data
+rf_predictions <- predict(rf_model, newdata = rf.final_validation_data)
+
+
+head(rf_predictions) 
+
+```
+
+# KNN Validation Predictions with Caret
+
+Now that we have our Random Forest predictions, let's make our KNN Regression predictions
+
+```{r}
+
+
+set.seed(1234)
+
+knn.final_validation_data<-final_validation_data
+
+# Combine predictors and target in the training data
+
+train_data <- cbind(knn.final_validation_data[, -which(names(knn.final_validation_data) == "charges")], target_column = knn.final_validation_data$charges)
+
+# Define control parameters for KNN
+
+ctrl <- trainControl(method = "cv", number = 10)
+
+# Train a KNN model using caret
+
+knn_model <- train(target_column ~ age + bmi +smoker, data = train_data, method = "knn", trControl = ctrl, tuneGrid = data.frame(k = 3))
+
+# Make predictions on new data
+
+knn_predictions <- predict(knn_model, newdata = knn.final_validation_data)
+
+# Print or use 'knn_predictions' as needed
+
+head(knn_predictions)
+
+```
+
+After constructing KNN and Random Forest predictions, we can make predictions with the MLR models.
+
+## Simple MLR Predictions with Final Validation Set
+
+```{r}
+
+set.seed(1234)
+
+simple_mlr_validation_set<-final_validation_data%>%select(age, bmi, children)
+
+
+
+simple.mlr.model<-glmnet(x=ins.partitioned[, c("age", "bmi", "children")], y=ins.partitioned$charge, alpha=0.1, lambda=7.364566)
+
+simple_mlr_predictions <- predict(simple.mlr.model, newx = as.matrix(simple_mlr_validation_set))
+
+
+colnames(simple_mlr_predictions) <- "simple_mlr_predictions"
+
+head(simple_mlr_predictions)
+
+```
+
+## Complex MLR Predictions with final validation set
+
+```{r}
+
+set.seed(1234)
+
+
+# Complex MLR model
+
+## Modify testing set for penalized regression
+
+ins.partitioned_temp <- ins.partitioned %>%
+  dummy_cols(select_columns = c("sex", "smoker", "region"), remove_selected_columns=TRUE)
+
+complex.ins.partitioned_temp<-ins.partitioned_temp
+complex.ins.partitioned_temp$age_sq<-(ins.partitioned_temp$age)^2
+complex.ins.partitioned_temp$bmi_sq<-(ins.partitioned_temp$bmi)^2
+complex.ins.partitioned_temp$children_sq<-(ins.partitioned_temp$children)^2
+
+complex.ins.partitioned_temp<-complex.ins.partitioned_temp%>%select(, c(age_sq, bmi_sq, children_sq, smoker_yes, region_northeast, region_northwest, region_southeast, charges))
+
+
+
+## Modify validation set for penalized regression
+
+complex_mlr_validation_set <- final_validation_data %>%
+  dummy_cols(select_columns = c("sex", "smoker", "region"), remove_selected_columns=TRUE)
+
+complex_mlr_validation_set$age_sq<-(complex_mlr_validation_set$age)^2
+complex_mlr_validation_set$bmi_sq<-(complex_mlr_validation_set$bmi)^2
+complex_mlr_validation_set$children_sq<-(complex_mlr_validation_set$children)^2
+
+
+complex_mlr_validation_set<-complex_mlr_validation_set%>%select(, c(age_sq, bmi_sq, children_sq, smoker_yes, region_northeast, region_northwest, region_southeast))
+
+
+complex_mlr_model <- glmnet(x = as.matrix(complex.ins.partitioned_temp[, c("age_sq", "bmi_sq", "children_sq", "smoker_yes", "region_northeast", "region_northwest", "region_southeast")]), 
+                            y = complex.ins.partitioned_temp$charges, 
+                            alpha = 0.1, 
+                            lambda = 19.14438)
+
+
+complex_mlr_predictions <- predict(complex_mlr_model, newx =as.matrix(complex_mlr_validation_set))
+
+colnames(complex_mlr_predictions) <- "complex_mlr_predictions"
+
+
+head(complex_mlr_predictions)
+
+```
+
+## Ensembling Validation
+
+Once our predictions are made, we aggregate all predictions into a single dataset.
+
+```{r}
+
+set.seed(1234)
+
+rf_predictions<-data.frame(rf_predictions)
+
+all.predictions<-cbind(final_validation_data,rf_predictions, knn_predictions, simple_mlr_predictions,complex_mlr_predictions)
+
+all.predictions$ensemble_predictions<-((all.predictions$rf_predictions+ all.predictions$knn_predictions+all.predictions$simple_mlr_predictions+all.predictions$complex_mlr_predictions)/4) 
+
+head(all.predictions)
+
+```
+
+With all our predictions in one dataset, we can build a function to identify the average RMSE through Leave One Out Cross Validation (LOOCV).
+
+```{r}
+
+
+
+# Initialize a vector to store RMSE values for each iteration
+rmse_values <- numeric(nrow(all.predictions))
+
+# Perform LOOCV
+for (i in 1:nrow(all.predictions)) {
+  # Exclude the i-th observation from the dataset
+  test_data <- all.predictions[i, ]
+  train_data <- all.predictions[-i, ]
+  
+  # Calculate ensemble prediction for the i-th observation
+  ensemble_prediction <- mean(c(all.predictions$rf_predictions, all.predictions$knn_predictions, all.predictions$simple.mlr_predictions, all.predictions$complexmlr_predictions))
+  
+  # Calculate RMSE for the i-th observation
+  rmse_values[i] <- mean((((all.predictions$charges- all.predictions$ensemble_prediction)^2)^0.5))
+}
+
+# Calculate the mean RMSE
+mean_rmse <- mean(rmse_values)
+
+mean_rmse
+
+
+ 
+ 
+
+```
+
+We then perform K-Fold Cross Validation.
+
+```{r}
+
+# Load the caret package
+library(caret)
+
+# Define the number of folds for cross-validation
+num_folds <- 10
+
+# Define the cross-validation control
+ctrl <- trainControl(method = "cv", number = num_folds)
+
+# Specify the models to ensemble
+models <- c(all.predictions$rf_predictions, all.predictions$knn_predictions, all.predictions$simple.mlr_predictions, all.predictions$complex.mlr_predictions)
+
+# Train the ensemble model using train function
+ensemble_model <- train(charges ~ .,
+                        data = all.predictions,
+                        method = "glm",
+                        trControl = ctrl,
+                        metric = "RMSE")
+
+# Print the cross-validation results
+
+ensemble_model$results[2] 
+
+ 
+```
+
+Final cross validations generate similar RMSEs. LOOCV generates RMSE of 7736.633, while K-Fold Cross Validation generates an RMSE of 6071.786
+
+# Conclusion
+
+Our final RMSE values from ensemble predictions are promising, average an RMSE between approximately 6000 and 7700. It shoudl be noted that our smallest RMSE achieved throughout the project was from Random Forest (RMSE = 4594.3267). Given the ensembled RMSE was larger than that of random forest on its own, there is evidence to suggest a need for model refinement. These could be the focus for future projects.
+
+In addition, predictive performance could be improved with additional variables not provided within the standard dataset. While this would require time and money to collect additional patient data (cancer history, smoking frequency, family history, for example), the exploration of novel variables could provide valuable insights that allow for more reliable models.
+
+Other future objectives might involve additional sampling. This would again require additional funds and time, but could reveal trends not represented within our limited dataset.
+
+Alternatives to additional sampling include analysis techniques like stratified sampling. This is a quick, cost effective analytical strategy for eliminating over-representation within a dataset (because remember, the majority of our dataset contains data from non-smokers). It should be emphasized, however, that stratified sampling techniques with not provide insights into unrepresented population trends.
+
+With these factors in mind, we are confident that future work on this project can reveal key insights benefiting companies involved in risk assessments and patients seeking transparency regarding their expected medical costs.
