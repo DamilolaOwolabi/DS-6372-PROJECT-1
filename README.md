@@ -1,7 +1,7 @@
 # DS-6372-PROJECT-1
 
-This isi a project that test our skills in data wrangling, EDA analysis, Multiple Linear Regression, cross validations, and k- Nearest Neighors
-
+This is a project that test our skills in data wrangling, EDA analysis, Multiple Linear Regression, cross validations, and k- Nearest Neighors.
+  For our prokect, we used the csv file: https://drive.google.com/file/d/1q0j_lqosFuEBp7eATW7kWTZZlf1qVjeM/view?usp=drive_link
 
   # MSDS 6372 Project 1 Description
   
